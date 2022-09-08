@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-stodgymd - tool for analyzing multicast data (FAST) from pcap files.
+stodgymd - tool for analyzing multicast market data from pcap files.
 It uses scapy (https://scapy.net).
 """
 import time
@@ -54,7 +54,7 @@ def main():
             delta_max_pcap_time = str(datetime.fromtimestamp(
                 float(delta_max['pcap_time'])))
             result = f"{'delta(us)':>14} {'src_time':<28} {'pcap_time':<28} " \
-                     f"{'seq_num':>20} {'pkt_num':>9}\n" \
+                     f"{'msgseqnum':>20} {'pkt_num':>9}\n" \
                      f"min: {delta_min['delta']:>9} " \
                      f"{delta_min_src_time:<28} {delta_min_pcap_time:<28} " \
                      f"{delta_min['seq_num']:>20} {delta_min['pkt_num']:>9}\n" \
@@ -70,9 +70,25 @@ def main():
         def __init__(self):
             # Parse and fill arguments
             self._args = self.parse_options()
+            #print(vars(self._args))
             self.count = self._args.count  # -c
+            # -f/--format format
+            if self._args.format == 'sb':  # SPBExchange Binary
+                self.data_format = 0
+                self.time_delta = self._args.time_delta  # -t
+            elif self._args.format == 'p4':  # MsgSeqNum: Preamble 4 bytes
+                self.data_format = 1
+                # We can't decode source time for FAST for now
+                if self._args.time_delta:
+                    print(f'INF: Option -t will be omitted')
+                self.time_delta = False
+            elif self._args.format == 'p8':  # MsgSeqNum: Preamble 8 bytes
+                self.data_format = 2
+                # We can't decode source time for FAST for now
+                if self._args.time_delta:
+                    print(f'INF: Option -t will be omitted')
+                self.time_delta = False
             self.time_perf = self._args.time_perf  # -d
-            self.time_delta = self._args.time_delta  # -t
             self.print = not self._args.p  # -p
             self.seq_analysis = self._args.s  # -s
             self.infile = self._args.infile  # infile
@@ -91,15 +107,23 @@ def main():
             """Parse CLI arguments provided at program start"""
             arg_parser = argparse.ArgumentParser(
                 prog="stodgy",
-                usage="%(prog)s [options] infile",
+                usage="%(prog)s [options] -f format infile",
                 add_help=True,
-                description="FAST multicast pcap files analyzer ")
+                description="Multicast market data pcap files analyzer ")
             arg_parser.version = "0.1"
             arg_parser.add_argument("--version", action="version")
             arg_parser.add_argument("-c", "--count", metavar="count",
                                     action="store", type=int, required=False,
                                     help="Number of frames/packets "
                                          "to process from the beginning of infile.")
+            arg_parser.add_argument("-f", "--format", metavar="format",
+                                    action="store", type=str, required=True,
+                                    help="Data format to decode MsgSeqNum: "
+                                         "p4 - FAST with a 4-bytes MsgSeqNum "
+                                         "added before every FAST-message; "
+                                         "p8 - FAST with an 8-bytes MsgSeqNum "
+                                         "added before every FAST-message; "
+                                         "sb - SPBExchange MD Binary")
             arg_parser.add_argument("-w", "--write-file", metavar="outfile",
                                     action="store", type=str, required=False,
                                     nargs="*",
@@ -134,9 +158,10 @@ def main():
                     file_list.append(i.rstrip('.pcap') + '.txt')
             return file_list
 
-    def parse_pcap(opt_infile: str, opt_count: int, opt_time_perf: bool,
-                   opt_print: bool, opt_time_delta: bool, opt_seq_analysis: bool,
-                   opt_write_file: bool = False, opt_outfile: list = None) -> None:
+    def parse_pcap(opt_data_format: str, opt_infile: str, opt_count: int,
+                   opt_time_perf: bool, opt_print: bool, opt_time_delta: bool,
+                   opt_seq_analysis: bool, opt_write_file: bool = False,
+                   opt_outfile: list = None) -> None:
         """Processes pcap file frame by frame"""
         if opt_write_file:
             try:
@@ -144,27 +169,36 @@ def main():
             except Exception as e:
                 print(e)
                 return
-        # For unpacking UDP data
-        # = native
+        # Unpacking UDP data
+        # < little-endian
         # h short     2 bytes
+        # i int       4 bytes
         # q long long 8 bytes
-        data_struct = struct.Struct("=hhqq")
+        if not opt_data_format:  # SPBExchange MD Binary
+            data_struct = struct.Struct("<hhqq")
+            size, msgid = None, None
+        elif opt_data_format == 1:  # Preamble 4 bytes: MOEX FAST
+            data_struct = struct.Struct("<i")
+        elif opt_data_format == 2:  # Preamble 8 bytes: SPBExchange FAST
+            data_struct = struct.Struct("<q")
+        seq_num = None
 
         ip, udp, data = None, None, None
         src_ip, dst_ip, dport = None, None, None
-        size, msgid, seq_num = None, None, None
         if opt_time_delta:
             delta_max = delta_min = delta_avg = delta_sum = delta = 0
         if opt_time_perf:
             ts_pkt_start = ts_pkt_end = ts_pkt_1 = ts_pkt_2 = ts_pkt_3 = \
                 ts_pkt_4 = ts_pkt_5 = 0
         if opt_print:
-            output_line = f"{'pkt_no':>12} " \
-                          f"{'src_time':<28} {'pcap_time':<28} "
+            output_line = f"{'pkt_no':<12} "
+            if not opt_data_format:
+                output_line += f"{'src_time':<28} "
+            output_line += f"{'pcap_time':<28} "
             if opt_time_delta:
                 output_line += f"{'delta(us)':>9} "
             output_line += f"{'src':<15} {'dst':<15} {'dport':<5} " \
-                           f"{'msgid':<5} {'size':>5} {'seqnum':>20} "
+                           f"{'msgseqnum':>20} "
 
             print(output_line)
         if opt_seq_analysis:
@@ -198,10 +232,15 @@ def main():
                     src_ip, dst_ip = ip.src, ip.dst
                     dport = udp.dport
                     data = udp.load
-                    if len(data) >= 20:
-                        size, msgid, seq_num, src_time_raw = \
-                            data_struct.unpack_from(data[:20])
-                        # src_time_raw: int 1658417660589225626
+                    if not opt_data_format:
+                        if len(data) >= 20:
+                            size, msgid, seq_num, src_time_raw = \
+                                data_struct.unpack_from(data[:20])
+                            # src_time_raw: int 1658417660589225626
+                    elif opt_data_format == 1:
+                        seq_num, = data_struct.unpack_from(data[:4])
+                    elif opt_data_format == 2:
+                        seq_num, = data_struct.unpack_from(data[:8])
                     else:
                         size = msgid = seq_num = src_time_raw = src_time = 0
                     if opt_time_perf:
@@ -219,16 +258,16 @@ def main():
                                 if flow_status[idx]:  # 1+: already received
                                     dups += 1
                                     flow_status[idx] += 1
-                                    print(f'WARN: pkt {count} seq_num {seq_num} duplicated')
+                                    print(f'WARN: pkt {count} msgseqnum {seq_num} duplicated')
                                 else:  # 0: Not received. It's out of order
                                     reorder += 1
                                     flow_status[idx] += 1
                                     if lost:
                                         lost -= 1
-                                    print(f'WARN: pkt {count} seq_num {seq_num} out-of-order')
+                                    print(f'WARN: pkt {count} msgseqnum {seq_num} out-of-order')
                             except:  # Not found. It's duplicated or reordered
                                 dups_reorder += 1
-                                print(f'WARN: pkt {count} seq_num {seq_num} duplicated or '
+                                print(f'WARN: pkt {count} msgseqnum {seq_num} duplicated or '
                                       f'out-of-order')
                         else:  # seq_num > expt
                             # Pkt from future or we lost some packets
@@ -240,7 +279,7 @@ def main():
                                     for i in range(expt, seq_num):
                                         flow_num.append(i)
                                         flow_status.append(0)
-                                print(f'WARN: pkt {count} seq_num {seq_num} received, {expt} '
+                                print(f'WARN: pkt {count} msgseqnum {seq_num} received, {expt} '
                                       f'expected, lost {n}')
                             flow_num.append(seq_num)
                             flow_status.append(1)
@@ -289,17 +328,25 @@ def main():
                         try:
                             pcap_time_str = str(datetime.fromtimestamp(
                                 float(pkt.time)))
-                            src_time_str = str(datetime.fromtimestamp(
-                                src_time_raw / 1e9))
                         except Exception as e:
-                            print(e)
-                        output_line = f"{count:>12} " \
-                                      f"{src_time_str:<28} {pcap_time_str:<28} "
+                            pcap_time_str = ''
+                            print(f'FAIL: Failed to get pcap timestamp: {e}')
+                        if not opt_data_format:
+                            try:
+                                src_time_str = str(datetime.fromtimestamp(
+                                    src_time_raw / 1e9))
+                            except Exception as e:
+                                src_time_str = ''
+                                print(f'FAIL: Failed to get MD source timestamp: {e}')
+                        output_line = f"{count:<12} "
+                        if not opt_data_format:
+                            output_line += f"{src_time_str:<28} "
+                        output_line += f"{pcap_time_str:<28} "
                         if opt_time_delta:
                             output_line += f"{delta:>9} "
                         output_line += f"{src_ip:<15} {dst_ip:<15} " \
                                        f"{dport:<5} " \
-                                       f"{msgid:<5} {size:>5} {seq_num:>20}"
+                                       f"{seq_num:>20}"
 
                         print(output_line)
                         if opt_time_perf:
@@ -331,13 +378,14 @@ def main():
                       f'Out-of-order: {reorder}\n'
                       f'Duplicated or out-of-order: {dups_reorder}'
                       f' (do manual investigation)')
-            print(f"Processed: {count} frames/pkts")
+            print(f"Processed: {count} frames (pkts)")
 
 
     params = Params()
     infile = params.infile[0]
     outfile = params.outfile[0] if params.write_file else None
-    parse_pcap(opt_infile=infile,
+    parse_pcap(opt_data_format=params.data_format,
+               opt_infile=infile,
                opt_outfile=outfile,
                opt_write_file=params.write_file,
                opt_count=params.count,
