@@ -5,7 +5,7 @@ It uses scapy (https://scapy.net).
 
 ## Usage
 
-```bash
+```shell
 stodgymd [options] -f format infile
 ```
 
@@ -23,8 +23,8 @@ stodgymd [options] -f format infile
 ### Examples:
 
 Time delta check for 100 packets:
-```bash
-$ python3 ../bin/stodgymd -t -p -c 100 test.pcap 
+```shell
+$ python3 ../bin/stodgymd -f sb -t -p -c 100 test.pcap 
 Time delta:
      delta(us) src_time                     pcap_time                               msgseqnum   pkt_num
 min:        15 2022-07-21 18:34:20.589226   2022-07-21 18:34:20.589241       6581676639633198         1
@@ -35,7 +35,7 @@ Elapsed: 0.7 s
 ```
 
 MsgSeqNum analysis:
-```bash
+```shell
 
 $ python3 ../bin/stodgymd -f sb -s test-loss-reorder.pcap -p
 WARN: pkt 104 msgseqnum 6581676639633302 received, 6581676639633301 expected, lost 1
@@ -66,7 +66,7 @@ The program will parse only udp packets.
 Time delta calculation implemented only for `sb` format for now. 
 
 Pcap file can be written with tcpdump as follows:
-```bash
+```shell
 tcpdump -nn -i eth0 -s 62 udp and host x.x.x.x -w file.pcap
 ```
 Where x.x.x.x is a multicast group IPv4 address.
@@ -85,7 +85,7 @@ Supported data formats:
 
 ## 1. Copy stodgymd
 
-```bash
+```shell
 git clone https://github.com/pr0xtti/stodgymd.git
 ```
 
@@ -93,26 +93,34 @@ git clone https://github.com/pr0xtti/stodgymd.git
 
 ### Install scapy with pip in user directory.
 
-```bash
+```shell
 pip install --user scapy
 ```
 Run
-```bash
-python3 stodgymd -h 
+```shell
+python3 ./stodgymd/stodgymd -h 
 ```
 
+In this case you can put stodgymd somewhere within PATH reachability, if you like:
+```shell
+sudo cp ./stodgymd/stodgymd /usr/local/bin/stodgymd
+sudo chmod +x /usr/local/bin/stodgymd
+
+stodgymd -h
+```
 
 ### Install scapy in venv.
 
-```bash
+```shell
 python3 -m venv stodgymd-venv
 . ./stodgymd-venv/bin/activate 
 pip install scapy
 ```
 Run
-```bash
+```shell
 . ./stodgy-venv/bin/activate
 python3 stodgymd -h
 ```
+
 
 
