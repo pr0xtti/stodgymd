@@ -190,6 +190,7 @@ def main():
         if opt_time_perf:
             ts_pkt_start = ts_pkt_end = ts_pkt_1 = ts_pkt_2 = ts_pkt_3 = \
                 ts_pkt_4 = ts_pkt_5 = 0
+            time_read = 0
         if opt_print:
             output_line = f"{'pkt_no':<12} "
             if not opt_data_format:
@@ -215,6 +216,7 @@ def main():
             for count, pkt in enumerate(f, 1):
                 if opt_time_perf:
                     ts_pkt_start = time.perf_counter_ns()
+                    time_read = ts_pkt_start - ts_pkt_end
                 if opt_count and count > opt_count:
                     count -= 1
                     break
@@ -359,8 +361,9 @@ def main():
 
                 if opt_time_perf:
                     ts_pkt_end = time.perf_counter_ns()
-                    output_line = f'pkt: {count} ' \
-                                  f'ns: {ts_pkt_end - ts_pkt_start}' \
+                    output_line = f'pkt: {count}' \
+                                  f' read(ns): {time_read}' \
+                                  f' pkt_proc: {ts_pkt_end - ts_pkt_start}' \
                                   f' check_udp: {ts_pkt_udp - ts_pkt_start}' \
                                   f' data_unpack: {ts_pkt_1 - ts_pkt_udp}' \
                                   f' delta_calc: {ts_pkt_2 - ts_pkt_1}' \
@@ -379,6 +382,7 @@ def main():
                       f'Duplicated or out-of-order: {dups_reorder}'
                       f' (do manual investigation)')
             print(f"Processed: {count} frames (pkts)")
+        #sys.stdout.close() ???
 
 
     params = Params()
