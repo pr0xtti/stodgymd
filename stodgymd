@@ -13,6 +13,7 @@ import struct
 from datetime import datetime
 import sys
 import argparse
+import concurrent.futures
 
 
 def main():
@@ -373,30 +374,36 @@ def main():
                         output_line += f' print: {ts_pkt_5 - ts_pkt_4}'
                     print(output_line)
 
+            output_line = f'Filename: {infile}\n'
             if opt_time_delta:
                 stat.set_delta(delta_type='delta_avg', delta=delta_avg)
-                print(f'Time delta:\n{stat}')
+                output_line += f'Time delta:\n{stat}\n'
             if opt_seq_analysis:
-                print(f'Lost: {lost}\nDuplicated: {dups}\n'
-                      f'Out-of-order: {reorder}\n'
-                      f'Duplicated or out-of-order: {dups_reorder}'
-                      f' (do manual investigation)')
-            print(f"Processed: {count} frames (pkts)")
+                output_line += f"\nMsgSeqNum analysis:\n" \
+                    f"{'Lost:':<27} {lost}\n" \
+                    f"{'Duplicated:':<27} {dups}\n" \
+                    f"{'Out-of-order:':<27} {reorder}\n" \
+                    f"{'Duplicated_or_out-of-order:':<27} {dups_reorder}" \
+                    f" (do manual investigation)\n"
+            output_line += f"{'Processed:'} {count} frames (pkts)\n\n"
+            print(output_line)
         #sys.stdout.close() ???
 
-
     params = Params()
-    infile = params.infile[0]
-    outfile = params.outfile[0] if params.write_file else None
-    parse_pcap(opt_data_format=params.data_format,
-               opt_infile=infile,
-               opt_outfile=outfile,
-               opt_write_file=params.write_file,
-               opt_count=params.count,
-               opt_time_perf=params.time_perf,
-               opt_print=params.print,
-               opt_time_delta=params.time_delta,
-               opt_seq_analysis=params.seq_analysis)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        for i in range(len(params.infile)):
+            infile = params.infile[i]
+            outfile = params.outfile[i] if params.write_file else None
+            executor.submit(parse_pcap,
+                            opt_data_format=params.data_format,
+                            opt_infile=infile,
+                            opt_outfile=outfile,
+                            opt_write_file=params.write_file,
+                            opt_count=params.count,
+                            opt_time_perf=params.time_perf,
+                            opt_print=params.print,
+                            opt_time_delta=params.time_delta,
+                            opt_seq_analysis=params.seq_analysis)
 
     end = time.perf_counter()
     print(f"Elapsed: {end - start:.1f} s")
